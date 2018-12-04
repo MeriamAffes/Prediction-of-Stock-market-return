@@ -1,0 +1,265 @@
+#import biblio
+import pandas as pd
+import os
+import matplotlib.pyplot as plt
+import numpy as np
+import sklearn.feature_selection
+import statsmodels.api as sm
+import statsmodels.formula.api as smf
+from sklearn.linear_model import LinearRegression
+
+#Read several csv files 
+df_list = []
+path=".."
+for file in os.listdir(path):
+    df = pd.read_csv(path+'/'+ file, engine='python')
+    #vars()[]: replace a string with a variable that have the same name
+    vars()[file.replace(".csv","")]=df
+    
+#M1 is a weekly data 
+#we calculate the mean of each month and then we calculate the change  
+M1['DATE'] = M1['DATE'].astype('datetime64[M]')
+Change_M1=M1.groupby(M1['DATE'],as_index=False)['M1'].mean()
+Change_M1['Change_M1']=pd.Series((Change_M1['M1'] + Change_M1['M1'].shift(-1))/Change_M1['M1'], index=Change_M1.index)
+
+#CPI is a daily data so we calculate the change as usual 
+shifted = CPI['CPIAUCSL'].shift(1)
+CPI['Change_CPI']=pd.Series((CPI['CPIAUCSL'] - shifted) / shifted, index=CPI.index)
+
+#Calculate daily Return 
+import numpy as np 
+SPY['Return']=pd.Series(np.log(SPY['Close'] / SPY['Close'].shift(1)), index=SPY.index)
+# calculate daily standard deviation of returns
+daily_Std = np.std(SPY['Return'])
+#So the 90 days volatility 
+SPY_Std= daily_Std*90**0.5
+
+#Calculate the daily return
+#ETF is a set of sector exchange trade funds
+ETF=['XLK','XLF','XLV','XLY','XLI','XLP','XLE','XLU','XTL','XLB']
+for i in ETF:
+    var=vars()[i]
+    var['Return']=pd.Series(10000*np.log(var['Close'] / var['Close'].shift(1)),index= vars()[i].index)
+    
+Change_M1={'DATE' : Change_M1['DATE'], 'Change_M1' : Change_M1['Change_M1']}
+Change_M1=pd.DataFrame(Change_M1) 
+Change_CPI={'DATE' : CPI['DATE'], 'Change_CPI' :CPI['Change_CPI']}
+Change_CPI=pd.DataFrame(Change_CPI) 
+List_items=['VIX','IGS','HYS','TS','CPI','O','UST3','M1','SPY']
+#list items is a set of features
+#replace each point by the value before 
+for f in List_items: 
+    try:
+        for i in range(10) :
+            vars()[f].loc[vars()[f][list(vars()[f])[1]] == '.', list(vars()[f])[1]] = vars()[f][list(vars()[f])[1]].shift(-1)
+    except :
+        pass
+
+    vars()[f][list(vars()[f])[1]] = vars()[f][list(vars()[f])[1]].astype(float)
+C:\Users\lenovo\Anaconda3\lib\site-packages\pandas\core\ops.py:1167: FutureWarning: elementwise comparison failed; returning scalar instead, but in the future will perform elementwise comparison
+  result = method(y)
+#Calculate SPY mines VIX
+SPY_VIX = {'DATE' : VIX['DATE'], 'SPY_VIX' :SPY_Std - VIX['VIXCLS'].astype(float)}
+SPY_VIX=pd.DataFrame(SPY_VIX)
+#list of features
+items=['VIX','IGS','HYS','TS','CPI','O','UST3','Change_M1','SPY_VIX']
+for f in items:
+        vars()[f]['DATE'] = vars()[f]['DATE'].astype('datetime64[ns]')
+for i in ETF: 
+        vars()[i]['Date'] = vars()[i]['Date'].astype('datetime64[ns]')
+item = pd.merge(VIX,IGS, on=['DATE'])
+for f in items :
+    if not(f == 'VIX' or f == 'IGS') :
+        item = pd.merge(item,vars()[f],'outer' ,on=['DATE'])
+    
+#the return of next day of ETF items
+#for each name in the ETF list we replace the strings with variables, then we drop all excessive data and we merge on Date  
+j=0
+for i in ETF : 
+    vars()['D_'+i] = vars()[i]
+    vars()['D_'+i]['Return'] = vars()['D_'+i]['Return'].shift(-1)
+    vars()['D_'+i] = vars()['D_'+i].drop('Open', 1)
+    vars()['D_'+i] = vars()['D_'+i].drop('High', 1)
+    vars()['D_'+i] = vars()['D_'+i].drop('Low', 1)
+    vars()['D_'+i] = vars()['D_'+i].drop('Close', 1)
+    vars()['D_'+i] = vars()['D_'+i].drop('Adj Close', 1)
+    vars()['D_'+i] = vars()['D_'+i].drop('Volume', 1)
+    vars()['D_'+i].columns = ['DATE', 'Returns_'+i]
+    
+   
+    if not(j == 0):
+        D = pd.merge(D,vars()['D_'+i],'outer' ,on=['DATE'])
+    else : 
+        D = vars()['D_'+i]
+    j = j+1
+    vars()['D_'+i] = pd.merge(item,vars()['D_'+i], 'outer',on=['DATE'])
+D = pd.merge(item,D,'outer', on=['DATE'])   
+#D is the panel Data 
+#We merge the next day ETF return and ETF items
+from datetime import datetime
+Date = 'Jan 1 2000'
+for i in ETF :
+    vars()['D_'+i] = vars()['D_'+i].drop(vars()['D_'+i][vars()['D_'+i].DATE < datetime.strptime(Date,'%b %d %Y')].index)
+    vars()['D_'+i]=vars()['D_'+i].reset_index(drop=True)
+D = D.drop(D[D.DATE < datetime.strptime(Date,'%b %d %Y')].index)
+D_ETF = []
+for e in ETF : 
+    D_ETF.append('D_'+e)
+for d in D_ETF : 
+    vars()[d]=vars()[d].sort_values('DATE')
+    vars()[d]=vars()[d].fillna(method='ffill')
+    vars()[d]=vars()[d].fillna(method='bfill')
+    vars()[d]=vars()[d].reset_index(drop=True)
+D.sort_values('DATE')
+
+
+D=D.reset_index(drop=True)
+#fill the Nan value using forward and backward fill
+D=D.fillna(method='ffill')
+D=D.fillna(method='Bfill')
+D.describe()
+hist_log=D.hist(figsize=(25, 15),log=True)
+
+X=['VIXCLS','BAMLC0A0CM','BAMLH0A0HYM2','T10Y2Y','Change_M1','Change_CPI','DCOILWTICO','TB3MS','SPY_VIX']
+Y=['Returns_XLK','Returns_XLF','Returns_XLV','Returns_XLY','Returns_XLI','Returns_XLP','Returns_XLE','Returns_XLU','Returns_XTL','Returns_XLB']
+for x in X :
+    for y in Y : 
+       # colors = np.random.rand(1)
+        #area = (30 * np.random.rand(1))**2  # 0 to 15 point radii
+         #plt.scatter(x, y, s=area, c=colors, alpha=0.5)
+        plt.figure()
+        plt.scatter(D[x],D[y])    
+plt.show()
+
+#The scatter doesn't show a clear pattern. In fact, some of our data stagnate, some are concentrated in one side,..
+#to more understand
+def bscatter(X,Y,k):
+    Xnom, thresh=pd.qcut(X, k, retbins=True,duplicates='drop')
+    tp = pd.DataFrame({'Xnom': Xnom, 'X': X, 'Y':Y})
+    GMn  = tp.groupby('Xnom').mean()
+    SeMn = tp.groupby('Xnom').std()/ np.sqrt(tp.groupby('Xnom').count())
+    Xq = GMn.X
+    Yq = GMn.Y
+    XSe = SeMn.X
+    YSe = SeMn.Y
+    return(Xq,XSe,Yq,YSe)
+for x in X :
+    for y in Y :
+        plt.figure()
+        bscatter(D[x],D[y],10)
+        plt.scatter(D[x],D[y])    
+plt.show()
+
+M=pd.DataFrame(index=X) # the mutual information dataframe
+C=pd.DataFrame(index=X) # the correlation dataframe
+for y in Y :
+        Cor=[]
+        mut=[]
+        for x in X :
+            #corr=np.corrcoef(D[x], D[y])[0, 1]
+            corr=D[x].corr(D[y])
+            Cor.append(corr)
+            print('the correlation between  '+x +' and '+y+' is equal to '+ str(corr))
+            m=sklearn.feature_selection.mutual_info_regression(D[x].values.reshape(-1, 1) ,D[y].values.reshape(-1, 1))[0]
+            print('the mutual information between  '+x +' and '+y+' is equal to '+ str(m))
+            mut.append(m)
+       # print(corr)
+#plt.plot(D[x],D[y], '.')
+        C[y]=pd.Series(Cor,index=X)
+        M[y]=pd.Series(mut,index=X)
+C.plot(marker='o' ,linewidth=0,figsize=(15, 10))
+plt.xticks(np.arange(9),tuple(X))
+
+#Discretizing X
+for x in X :
+    Des_X=pd.qcut(D[x],20,duplicates='drop')
+#print(Des_X)
+#Discretizing Y
+for y in Y :
+    Des_Y=pd.qcut(D[y],20,duplicates='drop')
+#print(Des_Y)
+pd.crosstab(Des_X,Des_Y)
+
+# Fit regression model 
+for e in ETF:
+        result = sm.OLS(vars()['D_'+e]['Returns_'+e], vars()['D_'+e][X])
+        results=result.fit()
+        pred=results.predict(vars()['D_'+e][X])
+        print(results.summary())
+        
+ y_hat=pd.DataFrame() #y_hat is a dataframe containing the prediction 
+Date = 'Jan 1 2010'
+y_hat['DATE'] = pd.Series(D['DATE'].tolist())
+y_hat=y_hat.loc[y_hat['DATE'] > datetime.strptime(Date,'%b %d %Y')]
+#y_hat['DATE'] = pd.Series(vars()['Test_'+e]['DATE'].tolist())
+
+for e in ETF:
+    vars()['Train_'+e]=vars()['D_'+e].loc[vars()['D_'+e]['DATE'] < datetime.strptime(Date,'%b %d %Y')]
+    vars()['Test_'+e]=vars()['D_'+e].loc[vars()['D_'+e]['DATE'] > datetime.strptime(Date,'%b %d %Y')]
+    res_Train = sm.OLS(vars()['Train_'+e]['Returns_'+e], vars()['Train_'+e][X])
+    results=res_Train.fit()
+    pred=results.predict(vars()['Test_'+e][X])
+    y_hat[e]=pd.Series(pred.tolist(),y_hat.index)
+    #plt.figure()
+    # plt.plot(pred,vars()['Test_'+e]['Returns_'+e],'bo')
+    #print(results.summary())
+    R_test=sklearn.metrics.r2_score(vars()['Test_'+e]['Returns_'+e],pred)
+    print(R_test)
+
+for e in ETF:
+    res_Train = sm.OLS(vars()['Train_'+e]['Returns_'+e], vars()['Train_'+e][X]).fit()
+    pred = res_Train.predict(vars()['Train_'+e][X])
+    R_train=sklearn.metrics.r2_score(vars()['Train_'+e]['Returns_'+e],pred)
+    print(R_train)
+    #the R square of test is calculated before
+    
+Portofolio = []
+y_hat= y_hat.reset_index(drop=True)
+L = y_hat[ETF].values.tolist()
+for i in y_hat.index :
+    l = L[i]
+    l = sorted(l)
+    Portofolio.append(-l[0]-l[1]-l[2]+l[-1]+l[-2]+l[-3])
+y_hat['Portofolio'] = Portofolio    
+
+Cumulative_R=y_hat['Portofolio'].sum()
+Mean_R=y_hat['Portofolio'].mean()
+Mean_R
+std_R=y_hat['Portofolio'].std()
+std_R
+
+
+path ="..."
+RFR = pd.read_csv(path+"/DGS1MO.csv",engine='python')
+Date = 'Jan 1 2010'
+RFR['DATE'] = RFR['DATE'].astype('datetime64[ns]')
+RFR = RFR.loc[RFR['DATE'] > datetime.strptime(Date,'%b %d %Y')]
+RFR = RFR.reset_index(drop=True)
+
+RFR = RFR.replace('.', np.NaN)
+RFR = RFR.fillna(method='ffill')
+RFR.columns = ['DATE', 'RFR_Return']
+RFR['RFR_Return'] = RFR['RFR_Return'].astype(float)
+RFR['RFR_Return'] = RFR['RFR_Return']/250
+Mean_RFR = RFR['RFR_Return'].mean()
+Mean_RFR
+SharpRatio=(Mean_R-Mean_RFR)/std_R
+Date = 'Jan 1 2010'
+SPY['Date'] = SPY['Date'].astype('datetime64[ns]')
+SPY = SPY.loc[SPY['Date'] > datetime.strptime(Date,'%b %d %Y')]
+SPY = SPY.reset_index(drop=True)
+RM = pd.DataFrame({'DATE':SPY['Date'], 'RM' : SPY['Return']})
+CAPM = pd.merge(y_hat,RFR,'left', on=['DATE'])
+CAPM = pd.merge(CAPM,RM,'left', on=['DATE'])
+CAPM = CAPM.fillna(method='ffill')
+CAPM['RM']= CAPM['RM'].astype(float)
+CAPM['RFR_Return']= CAPM['RFR_Return'].astype(float)
+CAPM['Rp-Rf']= pd.Series(CAPM['Portofolio']-CAPM['RFR_Return'],CAPM.index)
+CAPM['Rm-Rf']= pd.Series(CAPM['RM']-CAPM['RFR_Return'],CAPM.index)
+CAPM
+ll = CAPM['Rm-Rf'].values.tolist()
+ll = sm.add_constant(ll)
+mod = sm.OLS( CAPM['Rp-Rf'],ll)
+res = mod.fit()
+print(res.summary())
+
